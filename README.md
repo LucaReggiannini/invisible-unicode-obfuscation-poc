@@ -2,8 +2,7 @@
 
 This repository contains a minimal Proof of Concept demonstrating the abuse of invisible Unicode characters to obfuscate executable payloads in command lines and logs.
 
-This POC is based on the research described in my blog:
-https://reggia.xyz/posts/invisible-unicode-obfuscation-beyong-glassworm.html
+This POC is based on the research described in my blog. For a complete analysis of the technique, including execution behavior on Windows and Linux, XDR log visibility, detection strategies, and a detailed explanation of the proof of concept, refer to the full article: https://reggia.xyz/posts/invisible-unicode-obfuscation-beyong-glassworm.html
 
 ## Overview
 
