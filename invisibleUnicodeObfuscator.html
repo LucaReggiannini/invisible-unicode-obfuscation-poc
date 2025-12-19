@@ -1,0 +1,306 @@
+<html>
+<style>
+	.io-box {
+		width: 100%;
+		height: 100px;
+		box-sizing: border-box;
+	}
+	.action-row {
+		margin-top: 8px;
+		display: flex;
+		gap: 8px;
+		align-items: center;
+		flex-wrap: wrap;
+	}
+</style>
+
+<div>
+	<label>Mode:</label>
+	<select id="mode" onchange="updateMode()">
+		<option value="encode" selected>Encode</option>
+		<option value="decode">Decode</option>
+	</select>
+</div>
+
+<div style="margin-top:8px;">
+	<label>Plain / decoded</label><br>
+	<textarea id="plain" class="io-box"></textarea>
+</div>
+
+<div id="encodeOptions" style="margin-top:8px;">
+	<label>Unicode for bit 0:</label>
+	<select id="u0"></select>
+
+	<label style="margin-left:12px;">Unicode for bit 1:</label>
+	<select id="u1"></select>
+</div>
+
+<div class="action-row">
+	<button type="button" id="actionBtn" onclick="onAction()">Encode ↓</button>
+
+	<!-- Encode-mode buttons -->
+	<button type="button" id="saveEncodedBtn" onclick="saveEncoded()" disabled>Save encoded</button>
+	<button type="button" id="saveRevealBtn" onclick="saveReveal()" disabled>Save revealed</button>
+
+	<!-- Decode-mode button -->
+	<button type="button" id="saveDecodedBtn" onclick="saveDecoded()" disabled>Save decoded</button>
+</div>
+
+<div style="margin-top:8px;">
+	<label>Invisible / encoded</label><br>
+	<textarea id="obf" class="io-box"></textarea>
+</div>
+
+<div style="margin-top:8px;">
+	<label>Reveal (codepoints)</label><br>
+	<textarea id="reveal" class="io-box" readonly style="background:#f0f0f0;"></textarea>
+</div>
+
+<div id="error" style="margin-top:8px; color:red; font-weight:bold;"></div>
+
+<script>
+const INV_CP = [
+	0x0009,0x000A,0x000D,0x001B,0x0020,0x00A0,0x00AD,0x034F,0x061C,
+	0x115F,0x1160,0x1680,0x180E,0x2028,0x2029,0x202F,0x205F,
+	0x2800,0x3000,0x3164,0xFEFF,0xFFA0
+];
+
+function addRange(start, end) {
+	for (let cp = start; cp <= end; cp++) INV_CP.push(cp);
+}
+
+addRange(0x2000, 0x200F);
+addRange(0x202A, 0x202E);
+addRange(0x2060, 0x206F);
+addRange(0xFE00, 0xFE0F);
+addRange(0x1D173, 0x1D17A);
+INV_CP.push(0xE0001);
+addRange(0xE0020, 0xE007F);
+addRange(0xE0100, 0xE01EF);
+
+function buildSelect(id, defCp) {
+	const sel = document.getElementById(id);
+	sel.innerHTML = "";
+	INV_CP.forEach(cp => {
+		const opt = document.createElement("option");
+		const hex = cp.toString(16).toUpperCase();
+		const padded = cp > 0xFFFF ? hex.padStart(5,"0") : hex.padStart(4,"0");
+		opt.value = String.fromCodePoint(cp);
+		opt.textContent = "U+" + padded;
+		if (cp === defCp) opt.selected = true;
+		sel.appendChild(opt);
+	});
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+	document.getElementById("mode").value = "encode";
+	document.getElementById("plain").value = "";
+	document.getElementById("obf").value = "";
+	document.getElementById("reveal").value = "";
+	document.getElementById("error").textContent = "";
+
+	buildSelect("u0", 0x0020); // SPACE
+	buildSelect("u1", 0x0009); // TAB
+
+	document.getElementById("obf").addEventListener("input", onObfChange);
+	document.getElementById("plain").addEventListener("input", updateSaveButtons);
+
+	updateMode();
+});
+
+function updateMode() {
+	const mode = document.getElementById("mode").value;
+	const encOpts = document.getElementById("encodeOptions");
+	const btn = document.getElementById("actionBtn");
+	const plain = document.getElementById("plain");
+	const obf = document.getElementById("obf");
+	const reveal = document.getElementById("reveal");
+	const error = document.getElementById("error");
+
+	plain.value = "";
+	obf.value = "";
+	reveal.value = "";
+	error.textContent = "";
+
+	// Toggle encode/decode UI behavior
+	if (mode === "encode") {
+		encOpts.style.visibility = "visible";
+		btn.textContent = "Encode ↓";
+		plain.readOnly = false;
+		plain.style.backgroundColor = "";
+		obf.readOnly = true;
+		obf.style.backgroundColor = "#f0f0f0";
+	} else {
+		encOpts.style.visibility = "hidden";
+		btn.textContent = "Decode ↑";
+		plain.readOnly = true;
+		plain.style.backgroundColor = "#f0f0f0";
+		obf.readOnly = false;
+		obf.style.backgroundColor = "";
+	}
+
+	updateSaveButtons();
+}
+
+function updateSaveButtons() {
+	const mode = document.getElementById("mode").value;
+
+	const plainVal = document.getElementById("plain").value || "";
+	const obfVal = document.getElementById("obf").value || "";
+	const revealVal = document.getElementById("reveal").value || "";
+
+	const saveEncodedBtn = document.getElementById("saveEncodedBtn");
+	const saveRevealBtn = document.getElementById("saveRevealBtn");
+	const saveDecodedBtn = document.getElementById("saveDecodedBtn");
+
+	if (mode === "encode") {
+		saveEncodedBtn.style.display = "";
+		saveRevealBtn.style.display = "";
+		saveDecodedBtn.style.display = "none";
+
+		saveEncodedBtn.disabled = obfVal.length === 0;
+		saveRevealBtn.disabled = revealVal.trim().length === 0;
+	} else {
+		saveEncodedBtn.style.display = "none";
+		saveRevealBtn.style.display = "none";
+		saveDecodedBtn.style.display = "";
+
+		saveDecodedBtn.disabled = plainVal.length === 0;
+	}
+}
+
+function onAction() {
+	const mode = document.getElementById("mode").value;
+	document.getElementById("error").textContent = "";
+	if (mode === "encode") encodeInvisible();
+	else decodeInvisible();
+	updateSaveButtons();
+}
+
+function encodeInvisible() {
+	const plain = document.getElementById("plain").value || "";
+	const u0 = document.getElementById("u0").value;
+	const u1 = document.getElementById("u1").value;
+	if (!u0 || !u1) return;
+
+	let out = "";
+	for (const ch of plain) {
+		const code = ch.codePointAt(0) & 0xFF;
+		const bits = code.toString(2).padStart(8,"0");
+		for (const b of bits) out += (b === "0" ? u0 : u1);
+	}
+	document.getElementById("obf").value = out;
+	updateReveal();
+	updateSaveButtons();
+}
+
+function decodeInvisible() {
+	const obf = document.getElementById("obf").value || "";
+	const { ok, ch0, ch1, error } = detectTwoUnicode(obf);
+	if (!ok) {
+		document.getElementById("error").textContent = error;
+		document.getElementById("plain").value = "";
+		updateReveal();
+		updateSaveButtons();
+		return;
+	}
+
+	const bits = [];
+	for (const ch of obf) {
+		if (ch === ch0) bits.push("0");
+		else if (ch === ch1) bits.push("1");
+	}
+
+	let plain = "";
+	for (let i = 0; i + 7 < bits.length; i += 8) {
+		const byte = bits.slice(i, i + 8).join("");
+		const val = parseInt(byte, 2);
+		if (!Number.isNaN(val)) plain += String.fromCharCode(val);
+	}
+	document.getElementById("plain").value = plain;
+	updateReveal();
+	updateSaveButtons();
+}
+
+function detectTwoUnicode(text) {
+	const set = new Set();
+	for (const ch of text) {
+		const cp = ch.codePointAt(0);
+		if (!INV_CP.includes(cp)) continue;
+		set.add(ch);
+	}
+	const arr = [...set];
+	if (arr.length !== 2) {
+		if (arr.length === 0) {
+			return {
+				ok: false,
+				ch0: null,
+				ch1: null,
+				error: "Error: could not detect two valid invisible Unicode characters in the encoded text."
+			};
+		}
+		return {
+			ok: false,
+			ch0: null,
+			ch1: null,
+			error: "Error: detected " + arr.length + " distinct invisible Unicode characters, expected exactly 2."
+		};
+	}
+	return { ok: true, ch0: arr[0], ch1: arr[1], error: "" };
+}
+
+function onObfChange() {
+	updateReveal();
+	const mode = document.getElementById("mode").value;
+	if (mode === "decode") {
+		document.getElementById("error").textContent = "";
+		const obf = document.getElementById("obf").value || "";
+		const res = detectTwoUnicode(obf);
+		if (!res.ok) document.getElementById("error").textContent = res.error;
+	}
+	updateSaveButtons();
+}
+
+function updateReveal() {
+	const obf = document.getElementById("obf").value || "";
+	const cps = [];
+	for (const ch of obf) {
+		const cp = ch.codePointAt(0);
+		const hex = cp.toString(16).toUpperCase();
+		const padded = cp > 0xFFFF ? hex.padStart(5,"0") : hex.padStart(4,"0");
+		cps.push("U+" + padded);
+	}
+	document.getElementById("reveal").value = cps.join(" ");
+}
+
+/* ---------- Download helpers ---------- */
+
+function downloadText(filename, text) {
+	const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+	const url = URL.createObjectURL(blob);
+	const a = document.createElement("a");
+	a.href = url;
+	a.download = filename;
+	document.body.appendChild(a);
+	a.click();
+	a.remove();
+	URL.revokeObjectURL(url);
+}
+
+function saveDecoded() {
+	const plain = document.getElementById("plain").value || "";
+	downloadText("decoded_payload.txt", plain);
+}
+
+function saveEncoded() {
+	const obf = document.getElementById("obf").value || "";
+	// NB: encoded contains invisible chars; keep as UTF-8 text
+	downloadText("encoded_invisible_payload.txt", obf);
+}
+
+function saveReveal() {
+	const reveal = document.getElementById("reveal").value || "";
+	downloadText("revealed_codepoints.txt", reveal);
+}
+</script>
+</html>
